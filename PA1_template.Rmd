@@ -1,0 +1,132 @@
+---
+title: "Analysis of Personal Monitoring Device Activity"
+date: "November 5, 2015"
+output: html_document
+---
+<style type="text/css">
+.table {
+
+    width: 40%;
+
+}
+</style>
+###Introduction
+
+The data analyzed in this document are activity from a personal monitoring device such as Fitbit or Jawbone. This device recorded the number of one individual's steps in 5-minute increments for two months over October and November, 2012.
+```{r read_file_sum, echo=TRUE}
+####Note: All bolded numbers in this document are calculated in the R code above the numbers.
+####Reads the file and calculates total steps
+options(scipen=999)
+fileUrl <- "http://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip"
+cp2 <- download.file(fileUrl,destfile="activity.zip",method="curl",mode="wb")
+dateDownloaded <- date()
+unzip("activity.zip")
+act <- read.csv("activity.csv")
+steps <- paste(format(sum(act$steps,na.rm=TRUE),big.mark=',',format='f'))
+stepday <- setNames(aggregate(act$steps, by=list(act$date), FUN=sum, na.rm=TRUE),c("Date","TotSteps"))
+steps <- paste(format(steps,big.mark=',',format='f'))
+```
+###Steps Per Day
+
+The total number of steps over the two month period are **`r steps`**. Here they are by day:
+
+```{r list_tot_steps_day}
+####Lists the total steps per day
+library("knitr")
+kable(stepday,align="r")
+
+```
+
+Now see the Histogram of Steps. Notice that taking just greater than 10,000 steps per day occurred on 10 different days, and most days the individual took at least 10,000 steps. 
+
+```{r hist1}
+####Creates the histogram - frequency of total steps
+hist(stepday$TotSteps,col="blue",xlab="Total Steps",ylab="Days",main="Histogram of Steps",breaks=20)
+```
+
+
+```{r mean_med}
+####Calculates mean and median both including and excluding missing values. Calculates number of missing days.
+library("plyr")
+mean_miss <- paste(format(round(mean(stepday$TotSteps)),big.mark=',',format='f'))
+median_miss <- paste(format(median(stepday$TotSteps),big.mark=',',format='f'))
+mean_no_miss <- paste(format(round(mean(stepday[stepday$TotSteps>0,"TotSteps"])),big.mark=',',format='f'))
+median_no_miss <- paste(format(median(stepday[stepday$TotSteps>0,"TotSteps"]),big.mark=',',format='f'))
+num_miss_days <- count(stepday,"stepday$TotStep")[1,2]
+tot_days <- nrow(stepday)
+```
+
+
+There are **`r num_miss_days`** days of the **`r tot_days`** total days with missing values. If the missing days are included in the calculation, the mean and the median are **`r mean_miss`** and **`r median_miss`** respectively. However including the missing days may introduce some unwanted bias in the calculations. The mean and the median steps excluding the missing days are **`r mean_no_miss`** and **`r median_no_miss`** respectively.
+
+###Average Daily Pattern
+
+Below is a plot of the average steps per interval:
+```{r avg_step_intv}
+####Calculates average and maximum average number of steps per interval.
+avg_intv <- setNames(aggregate(act$steps, by=list(act$interval), FUN=mean, na.rm=TRUE),c("Interval","AvgSteps"))
+plot(x=avg_intv$Interval,y=avg_intv$AvgSteps,type="l",xlim=c(0,2355),ylim=c(0,210),xlab="Interval",ylab="Average Steps",main="Average Steps per Interval")
+mx_avg_step_int <- round(max(avg_intv$AvgSteps))
+avg_int_max <- avg_intv[which.max(avg_intv$AvgSteps),1]
+```
+
+The above plot shows that the maximum average number of steps in one interval is **`r mx_avg_step_int`** and that is at interval **`r avg_int_max`**, which is between 8:35 and 8:40 AM.
+
+```{r missing_vals}
+####Counts missing values and percent of missing values.
+miss_values <- sum(is.na(act$steps))
+miss_values_prt <- paste(format(sum(is.na(act$steps)),big.mark=',',format='f'))
+tot_rows <- nrow(act)
+tot_rows_prt <- paste(format(nrow(act),big.mark=',',format='f'))
+pct_miss <- round(miss_values/tot_rows * 100)
+```
+###Imputing Missing Values
+
+The total number of missing values in the original dataset is **`r miss_values_prt`** out of **`r tot_rows_prt`** total observations, which is **`r pct_miss`** percent. Because missing values can distort the results, they have been imputed using the mean from each 5-minute interval.
+
+The histogram below is shown after missing values have been imputed. Notice that the number of days with under 1000 steps has now been significantly reduced when compared with the earlier histogram.
+
+```{r imputed_vals}
+####Imputes missing values by using average per 5-minute interval. Plots histogram using imputed values.
+filled <- merge(act,avg_intv,by.x="interval",by.y="Interval")
+filled <- within(filled, steps <- ifelse(is.na(steps), AvgSteps, steps)) ##replaces NAs
+stepday2 <- setNames(aggregate(filled$steps, by=list(filled$date), FUN=sum, na.rm=TRUE),c("Date","TotSteps"))
+hist(stepday2$TotSteps,col="blue",xlab="Total Steps",ylab="Days",main="Histogram of Steps",breaks=20)
+mean_imp_miss <- paste(format(round(mean(stepday2[stepday2$TotSteps>0,"TotSteps"])),big.mark=',',format='f'))
+median_imp_miss <- paste(format(round(median(stepday2[stepday2$TotSteps>0,"TotSteps"])),big.mark=',',format='f'))
+```
+
+The mean and the median steps after imputing missing values **`r mean_imp_miss`** and **`r median_imp_miss`** respectively. These are the same as those above when the missing values were excluded (given small variance due to rounding), but are higher than the values calculated earlier when the missing values were included.
+
+###Weekdays versus Weekends
+
+```{r wkdy_wknd}
+####Creates a new Day_Type variable and uses that in a lattice plot to distinguish between activity on weekdays versus weekends. Also calculated percentages.
+filled$date <- as.Date(filled$date)
+wkdy <- c('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday')
+filled$Day_Type <- c('weekend', 'weekday')[(weekdays(filled$date) %in% wkdy)+1L]
+avg_intv_filled <- setNames(aggregate(filled$steps, by=list(filled$Day_Type,filled$interval), FUN=mean, na.rm=TRUE),c("Day_Type","Interval","AvgSteps"))
+library("lattice")
+xyplot(AvgSteps ~ Interval | Day_Type, data=avg_intv_filled, type = "l",main="Weekend vs Weekday - Average Steps per Day",ylab="Average Number of Steps")
+tot_intv_filled <- setNames(aggregate(filled$steps, by=list(filled$Day_Type), FUN=sum, na.rm=TRUE),c("Day_Type","TotSteps"))
+wkdy_tot <- tot_intv_filled[1,2]
+wkend_tot <- tot_intv_filled[2,2]
+pct_wkdy <- round(wkdy_tot/(wkdy_tot+wkend_tot)*100)
+pct_wkend <- round(wkend_tot/(wkdy_tot+wkend_tot)*100)
+pct_wkday <- pct_wkdy/5
+pct_wknd <- pct_wkend/2
+```
+
+Comparing weekend and weekday steps, **`r pct_wkdy`** percent of the activity occurred on the weekdays, which is **`r pct_wkday`** percent per day, and **`r pct_wkend`** percent occurred on the weekend, which is **`r pct_wknd`** percent per day. The main difference, as shown in the two plots above is that most of the weekday activity occurred between 5 am and 10 am, and the weekend activity was fairly consistent throughout the day with the majority of the activity occuring from 5 am to 9 pm.
+
+###Conclusion
+```{r Concl}
+####Calculates counts and percentages over 10,000 steps.
+tot_intv_filled_date <- setNames(aggregate(filled$steps, by=list(filled$date,filled$Day_Type), FUN=sum, na.rm=TRUE),c("Date","Day_Type","TotSteps"))
+ov10000 <- sum(tot_intv_filled_date$TotSteps >= 10000)
+pct_days <- round(ov10000/tot_days*100)
+ov10000_miss <- sum(stepday$TotSteps >= 10000)
+pct_days_miss <- round(ov10000_miss/tot_days*100)
+```
+
+It appears that the individual was very active for the majority of the two months. Many experts suggest walking at least 10,000 per day, and this individual accomplished this **`r pct_days`** percent of the time. While this person took consistent strides throughout the day, the most significant effort was between 5 and 10 AM weekday mornings. Note: However, what if the missing values were in fact days that the individual missed walking altogether? In that case, the results are less favorable, and the individual only met this goal **`r pct_days_miss`** percent of the time.
